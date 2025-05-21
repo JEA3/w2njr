@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>W2NJR FM Repeater Guide</title>
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
+
+  <style>
+    :root {
+      --brand-blue: #0055a4;
+      --brand-light: #f0f4f8;
+      --text-dark: #222;
+      --border-gray: #ccc;
+      --input-bg: #fff;
+      --button-bg: var(--brand-blue);
+      --button-text: #fff;
+      --highlight-bg: #fffa90;
+    }
+    body { font-family: sans-serif; margin:1rem; background-color:var(--brand-light); color:var(--text-dark); }
+    h1 { color:var(--brand-blue); margin-bottom:0.5rem; }
+    input, button {
+      padding:0.5rem; font-size:1rem;
+      border:1px solid var(--border-gray);
+      border-radius:4px;
+      background-color:var(--input-bg);
+      color:var(--text-dark);
+    }
+    button {
+      background-color:var(--button-bg);
+      color:var(--button-text);
+      border-color:var(--button-bg);
+      cursor:pointer;
+      margin-left:0.5rem;
+    }
+    button:hover { opacity:0.9; }
+    #status { margin-top:0.5rem; color:#c00; }
+    table {
+      width:100%; border-collapse:collapse;
+      margin-top:1rem; background-color:#fff;
+    }
+    th, td {
+      padding:0.5rem; border:1px solid var(--border-gray);
+      text-align:left;
+    }
+    th {
+      background-color:var(--brand-blue);
+      color:var(--button-text);
+    }
+    .hidden { display:none; }
+    .highlight { background-color: var(--highlight-bg); }
+    #mapWrapper {
+      position:relative; margin-top:1rem; height:400px;
+    }
+    #fullscreenBtn {
+      position:absolute; top:0.5rem; right:0.5rem; z-index:1000;
+      background:var(--button-bg); color:var(--button-text);
+      border:1px solid var(--button-bg); cursor:pointer;
+      padding:0.5rem; border-radius:4px;
+    }
+    #map { width:100%; height:100%; }
+    /* Fullscreen adjustments */
+    #mapWrapper:-webkit-full-screen,
+    #mapWrapper:-moz-full-screen,
+    #mapWrapper:-ms-fullscreen,
+    #mapWrapper:fullscreen {
+      width:100vw; height:100vh; margin:0;
+    }
+    #mapWrapper:-webkit-full-screen #map,
+    #mapWrapper:-moz-full-screen #map,
+    #mapWrapper:-ms-fullscreen #map,
+    #mapWrapper:fullscreen #map {
+      width:100%; height:100%;
+    }
+    #controls { margin-top:0.5rem; }
+    #controls label { margin-left:1rem; font-size:0.9rem; }
+  </style>
+</head>
+<body>
+  <h1>W2NJR FM Repeater Guide</h1>
+  <p>Enter your location (address, town/state, ZIP code, or 6-char Maidenhead grid) or Use My Location:</p>
+  <div id="controls">
+    <input type="text" id="locationInput" placeholder="e.g. Manahawkin, NJ or FN20qd">
+    <button id="findButton">Search</button>
+    <button id="geolocateBtn">Use My Location</button>
+    <label><input type="checkbox" id="beamToggle"> Show Beam Heading</label>
+  </div>
+  <div id="status"></div>
+
+  <table id="resultTable">
+    <thead>
+      <tr>
+        <th>Location</th>
+        <th>Distance</th>
+        <th>Frequency</th>
+        <th>Offset</th>
+        <th>PL</th>
+        <th>Link Status</th>
+        <th class="beam-col hidden">Beam Heading</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <div id="mapWrapper" class="hidden">
+    <button id="fullscreenBtn">Fullscreen</button>
+    <div id="map"></div>
+  </div>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script>
+    const repeaterList = [
+      { location:"Manahawkin, NJ",   lat:39.693472, lon:-74.250229, frequency:"445.075 MHz", offset:"-5 MHz",  pl:"141.3 Hz", linkStatus:"Linked" },
+      { location:"Brick Twp, NJ",    lat:40.060272, lon:-74.139343, frequency:"146.490 MHz", offset:"+1 MHz",  pl:"141.3 Hz", linkStatus:"Linked" },
+      { location:"Brick Twp, NJ",    lat:40.060272, lon:-74.139343, frequency:"448.125 MHz", offset:"-5 MHz",  pl:"141.3 Hz", linkStatus:"Linked" },
+      { location:"Toms River, NJ",   lat:39.954639, lon:-74.198456, frequency:"449.625 MHz", offset:"-5 MHz",  pl:"141.3 Hz", linkStatus:"Linked" },
+      { location:"Tinton Falls, NJ", lat:40.304167, lon:-74.101111, frequency:"449.525 MHz", offset:"-5 MHz",  pl:"141.3 Hz", linkStatus:"Linked" },
+      { location:"Wall Twp., NJ",    lat:40.160667, lon:-74.067975, frequency:"444.350 MHz", offset:"+5 MHz",  pl:"141.3 Hz", linkStatus:"Linked" },
+      { location:"Wall Twp., NJ",    lat:40.160667, lon:-74.067975, frequency:"146.775 MHz", offset:"-0.6 MHz", pl:"141.3 Hz", linkStatus:"Linked" },
+      { location:"Summit, NJ",       lat:40.714409, lon:-74.365124, frequency:"445.025 MHz", offset:"-5 MHz",  pl:"141.3 Hz", linkStatus:"Linked" },
+      { location:"Martinsville, NJ", lat:40.6012,    lon:-74.559000, frequency:"147.285 MHz", offset:"+0.6 MHz", pl:"141.3 Hz", linkStatus:"Linked" },
+      { location:"Murray Hill, NJ",  lat:40.6905,    lon:-74.4007,   frequency:"449.975 MHz", offset:"-5 MHz",  pl:"141.3 Hz", linkStatus:"Linked for Nets" },
+      { location:"Murray Hill, NJ",  lat:40.6905,    lon:-74.4007,   frequency:"147.255 MHz", offset:"+0.6 MHz", pl:"141.3 Hz", linkStatus:"Linked for Nets" },
+      { location:"Springfield, NJ",  lat:40.7049,    lon:-74.3172,   frequency:"446.375 MHz", offset:"-5 MHz",  pl:"141.3 Hz", linkStatus:"Linked" },
+      { location:"Alpine, NJ",       lat:40.9543,    lon:-73.9305,   frequency:"442.900 MHz", offset:"+5 MHz",  pl:"141.3 Hz", linkStatus:"Linked" },
+      { location:"Alpine, NJ",       lat:40.9543,    lon:-73.9305,   frequency:"146.955 MHz", offset:"-0.6 MHz", pl:"141.3 Hz", linkStatus:"Linked for UCTN" }
+    ];
+
+    function toRad(d) { return d * Math.PI / 180; }
+    function hav(lat1,lon1,lat2,lon2) {
+      const dLat = toRad(lat2-lat1), dLon = toRad(lon2-lon1);
+      return 6371 * 2 * Math.atan2(Math.sqrt(
+        Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon/2)**2
+      ), Math.sqrt(1 - (
+        Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon/2)**2
+      )));
+    }
+    function bear(lat1,lon1,lat2,lon2) {
+      const φ1 = toRad(lat1), φ2 = toRad(lat2), Δλ = toRad(lon2-lon1);
+      const y = Math.sin(Δλ) * Math.cos(φ2);
+      const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+      return ((Math.atan2(y, x) * 180/Math.PI + 360) % 360).toFixed(0);
+    }
+    function mh2ll(g) {
+      const G = g.toUpperCase();
+      const A = G.charCodeAt(0)-65, B = G.charCodeAt(1)-65;
+      const C = parseInt(G[2]), D = parseInt(G[3]);
+      const E = G.charCodeAt(4)-65, F = G.charCodeAt(5)-65;
+      return {
+        lon: A*20 - 180 + C*2 + E*(5/60) + 5/120,
+        lat: B*10 -  90 + D*1 + F*(2.5/60) + 2.5/120
+      };
+    }
+
+    const statusEl   = document.getElementById('status'),
+          tbody      = document.querySelector('#resultTable tbody'),
+          inputField = document.getElementById('locationInput'),
+          findBtn    = document.getElementById('findButton'),
+          geoBtn     = document.getElementById('geolocateBtn'),
+          beamToggle = document.getElementById('beamToggle'),
+          fsBtn      = document.getElementById('fullscreenBtn'),
+          mapWrapper = document.getElementById('mapWrapper');
+    let map, markersLayer;
+
+    function initMap() {
+      map = L.map('map').setView([39.95, -74.2], 10);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap contributors' }).addTo(map);
+      markersLayer = L.featureGroup().addTo(map);
+      map.on('click', () => document.querySelectorAll('#resultTable tbody tr').forEach(tr => tr.classList.remove('highlight')));
+    }
+
+    function showStatus(msg) { statusEl.innerText = msg; }
+
+    function plotResults(uLat, uLon) {
+      markersLayer.clearLayers();
+      L.circleMarker([uLat, uLon], { radius:10, color:'red', fillColor:'#f03', fillOpacity:0.7 }).bindPopup('Your Location').addTo(markersLayer);
+      const groups = {};
+      repeaterList.forEach(r => { const key = `${r.lat},${r.lon}`; if (!groups[key]) groups[key] = { loc: r.location, lat:r.lat, lon:r.lon, items: [] }; groups[key].items.push(r); });
+      Object.values(groups).forEach(g => {
+        let popup = `<strong>${g.loc}</strong><br>`;
+        g.items.forEach(e => popup += `${e.frequency} (${e.offset}, PL ${e.pl}, ${e.linkStatus})<br>`);
+        const marker = L.marker([g.lat, g.lon]).bindPopup(popup).addTo(markersLayer);
+        marker.on('click', () => {
+          document.querySelectorAll('#resultTable tbody tr').forEach(tr => tr.classList.remove('highlight'));
+          g.items.forEach(e => repeaterList.forEach((r,i) => { if (r===e) tbody.children[i].classList.add('highlight'); }));
+        });
+      });
+      map.fitBounds(markersLayer.getBounds().pad(0.4));
+    }
+
+    function render(lat, lon) {
+      if (mapWrapper.classList.contains('hidden')) { mapWrapper.classList.remove('hidden'); map.invalidateSize(); }
+      repeaterList.forEach(r => { r.distance=hav(lat,lon,r.lat,r.lon); r.bearing=bear(lat,lon,r.lat,r.lon); });
+      repeaterList.sort((a,b)=>a.distance-b.distance);
+      tbody.innerHTML='';
+      repeaterList.forEach(r=>{
+        const tr=document.createElement('tr'), mi=(r.distance*0.621371).toFixed(2)+' mi';
+        [r.location,mi,r.frequency,r.offset,r.pl,r.linkStatus].forEach(txt=>{const td=document.createElement('td');td.innerText=txt;tr.appendChild(td);});
+        const beamTd=document.createElement('td');beamTd.innerText=r.bearing+'°';beamTd.classList.add('beam-col');tr.appendChild(beamTd);
+        tbody.appendChild(tr);
+      });
+      document.querySelectorAll('.beam-col').forEach(el=>el.classList.toggle('hidden',!beamToggle.checked));
+      showStatus('');plotResults(lat,lon);
+    }
+
+    // Clear input on focus
+    inputField.addEventListener('focus', () => inputField.value = '');
+
+    function geocode(q) { showStatus('Geocoding…'); fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=us&q=${encodeURIComponent(q)}`)
+      .then(r=>r.json()).then(d=>{ if (d.length) render(+d[0].lat,+d[0].lon); else showStatus('Location not found.'); }).catch(e=>showStatus('Error: '+e)); }
+
+    findBtn.addEventListener('click', ()=>{
+      const q=inputField.value.trim(); if (!q) return showStatus('Please enter something.');
+      if (/^[A-R]{2}\d{2}[A-X]{2}$/i.test(q)) { const p=mh2ll(q); render(p.lat,p.lon); }
+      else geocode(q);
+    });
+    inputField.addEventListener('keydown', e=>{ if (e.key==='Enter'){e.preventDefault();findBtn.click();}});
+    geoBtn.addEventListener('click', ()=>{
+      if (!navigator.geolocation) return showStatus('Geolocation not supported'); showStatus('Locating…');
+      navigator.geolocation.getCurrentPosition(pos=>{
+        const lat=pos.coords.latitude, lon=pos.coords.longitude;
+        fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&addressdetails=1`)
+          .then(r=>r.json()).then(data=>{
+            if (data.address) {
+              const city=data.address.city||data.address.town||data.address.village||data.address.hamlet||'';
+              const state=data.address.state||'';
+              inputField.value=`${city}${state?`, ${state}`:''}`;
+            }
+            render(lat,lon);
+          }).catch(()=>render(lat,lon));
+      },()=>showStatus('Unable to retrieve location'));
+    });
+    beamToggle.addEventListener('change', ()=>document.querySelectorAll('.beam-col').forEach(el=>el.classList.toggle('hidden',!beamToggle.checked)));
+    fsBtn.addEventListener('click', ()=>{ if (!document.fullscreenElement) mapWrapper.requestFullscreen(); else document.exitFullscreen(); });
+
+    initMap();
+  </script>
+</body>
+</html>
