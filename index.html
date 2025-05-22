@@ -63,6 +63,8 @@
   <p>
     Official W2NJR Repeater System Site: 
     <a href="https://w2njr.net/" target="_blank" rel="noopener">https://w2njr.net/</a><br/>
+  </p>
+  <p>
     Enter your location (address, town/state, ZIP code, or 6-char Maidenhead grid) or Use My Location:
   </p>
 
@@ -104,11 +106,11 @@
     const DEM_URL        = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium";
     const TERRAIN_ZOOM   = 9;
     const RX_ANTENNA_DBI = 2.1;    // ¼-wave vertical (dBi)
-    const MOUNT_HEIGHT   = 1.5;    // m above ground
+    const MOUNT_HEIGHT   = 3;      // m above ground
     const S9_VHF_DBM     = -93;    // ITU/IARU VHF S9 reference
     const S_STEP         = 6;      // dB per S-unit
     const SYSTEM_LOSS_DB = 3;      // dB feedline/duplexer loss
-    const FADE_PER_KM    = 0.2;    // dB extra loss per km
+    const FADE_PER_KM    = 0.3;    // dB extra loss per km
 
     // offscreen canvas
     const canvas = document.createElement("canvas"), ctx = canvas.getContext("2d");
