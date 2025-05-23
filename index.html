@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>W2NJR Analog Repeater Guide</title>
+  <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <style>
     :root {
@@ -25,16 +26,12 @@
     }
     button {
       background:var(--button-bg); color:var(--button-text);
-      border-color:var(--button-bg); cursor:pointer; margin-left:0.5rem;
+      border:1px solid var(--button-bg); cursor:pointer; margin-left:0.5rem;
     }
     button:hover { opacity:0.9; }
     #status, #elevation { margin-top:0.5rem; color:#333; }
-    table {
-      width:100%; border-collapse:collapse; margin-top:1rem; background:#fff;
-    }
-    th, td {
-      padding:0.5rem; border:1px solid var(--border-gray); text-align:left;
-    }
+    table { width:100%; border-collapse:collapse; margin-top:1rem; background:#fff; }
+    th, td { padding:0.5rem; border:1px solid var(--border-gray); text-align:left; }
     th { background:var(--brand-blue); color:var(--button-text); }
     .hidden { display:none; }
     .highlight { background:var(--highlight-bg); }
@@ -49,11 +46,15 @@
     #mapWrapper:-webkit-full-screen,
     #mapWrapper:-moz-full-screen,
     #mapWrapper:-ms-fullscreen,
-    #mapWrapper:fullscreen { width:100vw; height:100vh; margin:0; }
+    #mapWrapper:fullscreen {
+      width:100vw; height:100vh; margin:0;
+    }
     #mapWrapper:-webkit-full-screen #map,
     #mapWrapper:-moz-full-screen #map,
     #mapWrapper:-ms-fullscreen #map,
-    #mapWrapper:fullscreen #map { width:100%; height:100%; }
+    #mapWrapper:fullscreen #map {
+      width:100%; height:100%;
+    }
     #controls { margin-top:0.5rem; }
     #controls label { margin-left:1rem; font-size:0.9rem; }
   </style>
@@ -61,13 +62,12 @@
 <body>
   <h1>W2NJR Analog Repeater Guide</h1>
   <p>
-    Official W2NJR Repeater System Site: 
-    <a href="https://w2njr.net/" target="_blank" rel="noopener">https://w2njr.net/</a><br/>
+    Official W2NJR Repeater System Site:
+    <a href="https://w2njr.net/" target="_blank" rel="noopener">w2njr.net</a>
   </p>
   <p>
-    Enter your location (address, town/state, ZIP code, or 6-char Maidenhead grid) or Use My Location:
+    Enter your location (address, town/state, ZIP, or 6-char Maidenhead) or Use My Location:
   </p>
-
   <div id="controls">
     <input id="locationInput" type="text" placeholder="Click here and start typing…" />
     <button id="findButton">Search</button>
@@ -84,7 +84,7 @@
         <th>Location</th>
         <th>Distance</th>
         <th class="pseudo-col hidden">Rx Power (dBm)</th>
-        <th class="pseudo-col hidden">S Units</th>
+        <th class="pseudo-col hidden">S-Units</th>
         <th>Frequency</th>
         <th>Offset</th>
         <th>PL</th>
@@ -100,19 +100,19 @@
     <div id="map"></div>
   </div>
 
+  <!-- Leaflet JS -->
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script>
     // ─── CONFIG ───────────────────────────────────────────────────────────
     const DEM_URL        = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium";
     const TERRAIN_ZOOM   = 9;
-    const RX_ANTENNA_DBI = 2.1;    // ¼-wave vertical (dBi)
-    const MOUNT_HEIGHT   = 3;      // m above ground
-    const S9_VHF_DBM     = -93;    // ITU/IARU VHF S9 reference
-    const S_STEP         = 6;      // dB per S-unit
-    const SYSTEM_LOSS_DB = 3;      // dB feedline/duplexer loss
-    const FADE_PER_KM    = 0.3;    // dB extra loss per km
+    const RX_ANTENNA_DBI = 2.1;
+    const MOUNT_HEIGHT   = 3;
+    const S9_VHF_DBM     = -93;
+    const S_STEP         = 6;
+    const SYSTEM_LOSS_DB = 3;
+    const FADE_PER_KM    = 0.3;
 
-    // offscreen canvas
     const canvas = document.createElement("canvas"), ctx = canvas.getContext("2d");
 
     // ─── HELPERS ───────────────────────────────────────────────────────────
@@ -122,22 +122,32 @@
       return (180/Math.PI)*Math.atan(0.5*(Math.exp(n)-Math.exp(-n)));
     }
     function toRad(d){ return d*Math.PI/180; }
-    function hav(a,b,c,d){
-      const dLat = toRad(c-a), dLon = toRad(d-b);
-      const A = Math.sin(dLat/2)**2 +
-                Math.cos(toRad(a))*Math.cos(toRad(c))*
+    function hav(lat1,lon1,lat2,lon2){
+      const dLat = toRad(lat2-lat1), dLon = toRad(lon2-lon1);
+      const a = Math.sin(dLat/2)**2 +
+                Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*
                 Math.sin(dLon/2)**2;
-      return 6371*2*Math.atan2(Math.sqrt(A), Math.sqrt(1-A));
+      return 6371*2*Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
     }
-    function bear(a,b,c,d){
-      const φ1=toRad(a), φ2=toRad(c), Δλ=toRad(d-b);
+    function bear(lat1,lon1,lat2,lon2){
+      const φ1=toRad(lat1), φ2=toRad(lat2), Δλ=toRad(lon2-lon1);
       const y=Math.sin(Δλ)*Math.cos(φ2),
-            x=Math.cos(φ1)*Math.sin(φ2) -
-              Math.sin(φ1)*Math.cos(φ2)*Math.cos(Δλ);
+            x=Math.cos(φ1)*Math.sin(φ2)
+              - Math.sin(φ1)*Math.cos(φ2)*Math.cos(Δλ);
       return ((Math.atan2(y,x)*180/Math.PI+360)%360).toFixed(0);
     }
+    function mh2ll(g){
+      const G=g.toUpperCase(),
+            A=G.charCodeAt(0)-65, B=G.charCodeAt(1)-65,
+            C=+G[2], D=+G[3],
+            E=G.charCodeAt(4)-65, F=G.charCodeAt(5)-65;
+      return {
+        lon: A*20 -180 + C*2 + E*(5/60) + 5/120,
+        lat: B*10 - 90 + D*1 + F*(2.5/60) + 2.5/120
+      };
+    }
 
-    // ─── TERRARIUM ELEVATION ────────────────────────────────────────────────
+    // ─── ELEVATION ─────────────────────────────────────────────────────────
     async function getElevation(lat,lon){
       const z=TERRAIN_ZOOM,
             x=Math.floor((lon+180)/360 * 2**z),
@@ -158,57 +168,32 @@
       }
     }
 
-    // ─── LINK-BUDGET WITH HATA/COST-231 + FADE ─────────────────────────────
+    // ─── LINK-BUDGET ────────────────────────────────────────────────────────
     async function calculatePseudoSNR(distKm,rpt){
       const f  = parseFloat(rpt.frequency),
             hb = parseFloat(rpt.amsl)*0.3048,
             hm = MOUNT_HEIGHT,
             d  = distKm;
-
-      const a_hm = (1.1*Math.log10(f) - 0.7)*hm
-                 - (1.56*Math.log10(f) - 0.8);
-
-      const L_urban = 69.55
-                    + 26.16*Math.log10(f)
-                    - 13.82*Math.log10(hb)
-                    - a_hm
+      const a_hm = (1.1*Math.log10(f)-0.7)*hm - (1.56*Math.log10(f)-0.8);
+      const L_urban = 69.55 + 26.16*Math.log10(f) - 13.82*Math.log10(hb) - a_hm
                     + (44.9 - 6.55*Math.log10(hb))*Math.log10(d);
-
-      const L_sub = L_urban
-                  - 2*Math.pow(Math.log10(f/28),2)
-                  - 5.4;
-
+      const L_sub = L_urban - 2*Math.pow(Math.log10(f/28),2) - 5.4;
       const ptDbm = 10*Math.log10(rpt.power*1000);
       const gtdBi = 10*Math.log10(rpt.gain) + RX_ANTENNA_DBI;
-      const fadeDb = FADE_PER_KM * distKm;
-
+      const fadeDb= FADE_PER_KM * d;
       return ptDbm + gtdBi - L_sub - SYSTEM_LOSS_DB - fadeDb;
     }
-
-    // ─── Prx [dBm] → S-unit ────────────────────────────────────────────────
-    function prx2Sunits(prx){
-      if(prx >= S9_VHF_DBM){
-        const extra = Math.round((prx - S9_VHF_DBM)/5)*5;
-        return extra>0 ? `S9+${extra}dB` : "S9";
+    function prx2Sunits(dbm){
+      if(dbm>=S9_VHF_DBM){
+        const extra=Math.round((dbm-S9_VHF_DBM)/5)*5;
+        return extra>0?`S9+${extra}dB`:`S9`;
       }
-      const s = 9 + Math.floor((prx - S9_VHF_DBM)/S_STEP);
-      return s>0 ? `S${s}` : "S0";
-    }
-
-    // ─── Maidenhead → lat/lon ───────────────────────────────────────────────
-    function mh2ll(g){
-      const G=g.toUpperCase(),
-            A=G.charCodeAt(0)-65, B=G.charCodeAt(1)-65,
-            C=+G[2], D=+G[3],
-            E=G.charCodeAt(4)-65, F=G.charCodeAt(5)-65;
-      return {
-        lon: A*20 -180 + C*2   + E*(5/60)+5/120,
-        lat: B*10 - 90 + D*1   + F*(2.5/60)+2.5/120
-      };
+      const s=9+Math.floor((dbm-S9_VHF_DBM)/S_STEP);
+      return s>0?`S${s}`:`S0`;
     }
 
     // ─── REPEATERS ──────────────────────────────────────────────────────────
-    const repeaterList = [
+    const repeaterList=[
       {location:"Manahawkin, NJ",lat:39.693472,lon:-74.250229,frequency:"445.075",offset:"-5",pl:"141.3",callSign:"W2NJR",amsl:"492",power:50,linkStatus:"Linked"},
       {location:"Brick Twp, NJ", lat:40.060272,lon:-74.139343,frequency:"146.490",offset:"+1",pl:"141.3",callSign:"W2NJR",amsl:"115",power:50,linkStatus:"Linked"},
       {location:"Brick Twp, NJ", lat:40.060272,lon:-74.139343,frequency:"448.125",offset:"-5",pl:"141.3",callSign:"W2NJR",amsl:"125",power:50,linkStatus:"Linked"},
@@ -220,17 +205,17 @@
       {location:"Martinsville, NJ",lat:40.5735,lon:-74.5713,frequency:"147.285",offset:"+0.6",pl:"141.3",callSign:"W2NJR",amsl:"909",power:300,linkStatus:"Linked"},
       {location:"Murray Hill, NJ",lat:40.6882,lon:-74.3846,frequency:"449.975",offset:"-5",pl:"141.3",callSign:"W2LI", amsl:"591",power:75,linkStatus:"Linked for Nets"},
       {location:"Murray Hill, NJ",lat:40.6882,lon:-74.3846,frequency:"147.255",offset:"+0.6",pl:"141.3",callSign:"W2LI", amsl:"591",power:75,linkStatus:"Linked for Nets"},
-      {location:"Springfield, NJ",lat:40.7037,lon:-74.3297,frequency:"446.375",offset:"-5",pl:"141.3",callSign:"W2FCC",amsl:"200",power:50,linkStatus:"Linked"},
+      {location:"Springfield, NJ",lat:40.7037,lon:-74.3297,frequency:"446.375",offset:" -5",pl:"141.3",callSign:"W2FCC",amsl:"200",power:50,linkStatus:"Linked"},
       {location:"Alpine, NJ",     lat:40.9726,lon:-73.9249,frequency:"442.900",offset:"+5",pl:"141.3",callSign:"K2ETN",amsl:"250",power:50,linkStatus:"Linked"},
       {location:"Alpine, NJ",     lat:40.9726,lon:-73.9249,frequency:"146.955",offset:"-0.6",pl:"141.3",callSign:"K2ETN",amsl:"250",power:50,linkStatus:"Linked for UCTN"}
     ];
     repeaterList.forEach(r=>{
       const f=parseFloat(r.frequency);
-      r.gain = f<400 ? Math.pow(10,5/10) : Math.pow(10,7/10);
+      r.gain = f<400?Math.pow(10,5/10):Math.pow(10,7/10);
     });
 
-    // ─── MAP & UI SETUP ──────────────────────────────────────────────────────
-    let map, markersLayer, lastUserCoords=null;
+    // ─── MAP & UI ──────────────────────────────────────────────────────────
+    let map, markersLayer, markerLookup={}, lastUserCoords=null;
     const statusEl     = document.getElementById("status"),
           elevationEl  = document.getElementById("elevation"),
           tbody        = document.querySelector("#resultTable tbody"),
@@ -245,163 +230,132 @@
     function initMap(){
       map = L.map("map").setView([39.95,-74.2],10);
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-                  { attribution:"© OpenStreetMap contributors" })
-         .addTo(map);
+                  { attribution:"© OpenStreetMap contributors" }).addTo(map);
       markersLayer = L.featureGroup().addTo(map);
-      map.on("click", ()=> {
-        document.querySelectorAll("#resultTable tbody tr")
-                .forEach(tr=>tr.classList.remove("highlight"));
+      map.on("click",()=>{
+        document.querySelectorAll("#resultTable tbody tr").forEach(tr=>tr.classList.remove("highlight"));
       });
     }
 
-    // Clear the search box on focus
-    inputField.addEventListener("focus", () => {
-      inputField.value = "";
-    });
-
+    inputField.addEventListener("focus",()=>{ inputField.value=""; });
     function showStatus(msg){ statusEl.innerText = msg; }
-
-    beamToggle.addEventListener("change", ()=>{
-      document.querySelectorAll(".beam-col")
-        .forEach(el=>el.classList.toggle("hidden",!beamToggle.checked));
-      if(lastUserCoords) render(lastUserCoords.lat,lastUserCoords.lon);
-    });
-    pseudoToggle.addEventListener("change", ()=>{
-      document.querySelectorAll(".pseudo-col")
-        .forEach(el=>el.classList.toggle("hidden",!pseudoToggle.checked));
-      if(lastUserCoords) render(lastUserCoords.lat,lastUserCoords.lon);
-    });
-    fsBtn.addEventListener("click", ()=>{
-      document.fullscreenElement
-        ? document.exitFullscreen()
-        : mapWrapper.requestFullscreen();
-    });
+    beamToggle.addEventListener("change",()=>{ if(lastUserCoords) render(lastUserCoords.lat,lastUserCoords.lon); });
+    pseudoToggle.addEventListener("change",()=>{ if(lastUserCoords) render(lastUserCoords.lat,lastUserCoords.lon); });
+    fsBtn.addEventListener("click",()=>{ document.fullscreenElement?document.exitFullscreen():mapWrapper.requestFullscreen(); });
 
     async function render(lat,lon){
       lastUserCoords={lat,lon};
-      const baseElev  = await getElevation(lat,lon),
-            totalAMSL = baseElev + MOUNT_HEIGHT;
-      elevationEl.innerText =
-        `Ground Elevation: ${baseElev.toFixed(1)} m ASL; Antenna at ${totalAMSL.toFixed(1)} m`;
+      const baseElev = await getElevation(lat,lon), totalAMSL=baseElev+MOUNT_HEIGHT;
+      elevationEl.innerText=`Ground Elevation: ${baseElev.toFixed(1)} m ASL; Antenna at ${totalAMSL.toFixed(1)} m`;
+      if(mapWrapper.classList.contains("hidden")){ mapWrapper.classList.remove("hidden"); map.invalidateSize(); }
 
-      if(mapWrapper.classList.contains("hidden")){
-        mapWrapper.classList.remove("hidden");
-        map.invalidateSize();
-      }
-
-      repeaterList.forEach(r=>{
-        r.distance = hav(lat,lon,r.lat,r.lon);
-        r.bearing  = bear(lat,lon,r.lat,r.lon);
-      });
-
+      repeaterList.forEach(r=>{ r.distance=hav(lat,lon,r.lat,r.lon); r.bearing=bear(lat,lon,r.lat,r.lon); });
       if(pseudoToggle.checked){
         showStatus("Calculating Rx power…");
-        try {
-          await Promise.all(repeaterList.map(r=>
-            calculatePseudoSNR(r.distance,r).then(prx=>{
-              r.prxDbm = prx;
-              r.sUnits = prx2Sunits(prx);
-            })
-          ));
-          showStatus("");
-        } catch(e){
-          console.error(e);
-          showStatus("Error; sorting by distance.");
-          repeaterList.forEach(r=> r.prxDbm=r.sUnits=null);
-        }
-      } else {
-        repeaterList.forEach(r=> r.prxDbm=r.sUnits=null);
-      }
+        await Promise.all(repeaterList.map(r=>calculatePseudoSNR(r.distance,r).then(prx=>{ r.prxDbm=prx; r.sUnits=prx2Sunits(prx); })));
+        showStatus("");
+      } else repeaterList.forEach(r=>{ r.prxDbm=null; r.sUnits=null; });
 
-      repeaterList.sort((a,b)=>
-        pseudoToggle.checked
-          ? (b.prxDbm||-Infinity) - (a.prxDbm||-Infinity)
-          : a.distance - b.distance
+      repeaterList.sort((a,b)=>pseudoToggle.checked
+        ? (b.prxDbm||-Infinity)-(a.prxDbm||-Infinity)
+        : a.distance-b.distance
       );
 
+      // build table & embed data attributes
       tbody.innerHTML="";
-      repeaterList.forEach(r=>{
-        const tr=document.createElement("tr"),
-              mi=(r.distance*0.621371).toFixed(2)+" mi";
-        [
-          r.location,
-          mi,
-          r.prxDbm!=null ? r.prxDbm.toFixed(1) : "-",
-          r.sUnits || "-",
-          r.frequency+" MHz",
-          r.offset   +" MHz",
-          r.pl       +" Hz",
-          r.linkStatus,
-          r.bearing  +"°"
-        ].forEach((txt,i)=>{
-          const td=document.createElement("td"); td.innerText=txt;
+      repeaterList.forEach((r,index)=>{
+        const tr=document.createElement("tr");
+        tr.dataset.lat = r.lat;
+        tr.dataset.lon = r.lon;
+
+        const mi=(r.distance*0.621371).toFixed(2)+" mi";
+        [r.location, mi,
+         r.prxDbm!=null?r.prxDbm.toFixed(1):"-", r.sUnits||"-",
+         r.frequency+" MHz", r.offset+" MHz", r.pl+" Hz",
+         r.linkStatus, r.bearing+"°"]
+        .forEach((txt,i)=>{
+          const td=document.createElement("td");
+          td.innerText=txt;
           if(i===2||i===3) td.classList.add("pseudo-col");
-          if(i===8)       td.classList.add("beam-col");
+          if(i===8)        td.classList.add("beam-col");
           tr.appendChild(td);
         });
+
+        // click row to highlight marker
+        tr.addEventListener("click",()=>{
+          document.querySelectorAll("#resultTable tbody tr").forEach(rw=>rw.classList.remove("highlight"));
+          tr.classList.add("highlight");
+          const key = `${r.lat},${r.lon}`, mk = markerLookup[key];
+          if(mk){ mk.openPopup(); map.setView([r.lat,r.lon], map.getZoom()); }
+        });
+
         tbody.appendChild(tr);
       });
 
-      document.querySelectorAll(".pseudo-col")
-        .forEach(el=>el.classList.toggle("hidden",!pseudoToggle.checked));
-      document.querySelectorAll(".beam-col")
-        .forEach(el=>el.classList.toggle("hidden",!beamToggle.checked));
+      document.querySelectorAll(".pseudo-col").forEach(el=>el.classList.toggle("hidden",!pseudoToggle.checked));
+      document.querySelectorAll(".beam-col").forEach(el=>el.classList.toggle("hidden",!beamToggle.checked));
 
+      // plot markers and attach marker->row highlighting
       markersLayer.clearLayers();
+      markerLookup={};
+
+      // user location
       L.circleMarker([lat,lon],{radius:8,color:"red",fillColor:"#f03",fillOpacity:0.7})
         .bindPopup("Your Location").addTo(markersLayer);
 
-      const groups={};
+      // group repeaters
+      const groups = {};
       repeaterList.forEach(r=>{
-        const key=`${r.lat},${r.lon}`;
-        if(!groups[key]) groups[key]={lat:r.lat,lon:r.lon,loc:r.location,items:[]};
-        groups[key].items.push(r);
+        const k = `${r.lat},${r.lon}`;
+        if(!groups[k]) groups[k]={lat:r.lat,lon:r.lon,items:[]};
+        groups[k].items.push(r);
       });
+
       Object.values(groups).forEach(g=>{
-        let html=`<strong>${g.loc}</strong><br>`;
-        g.items.forEach(e=> html+=`${e.frequency} MHz (${e.offset} MHz, PL ${e.pl} Hz)<br>`);
-        const m=L.marker([g.lat,g.lon]).bindPopup(html).addTo(markersLayer);
+        let popup=`<strong>${g.items[0].location}</strong><br>`;
+        g.items.forEach(e=>popup+=`${e.frequency} MHz (${e.offset} MHz, PL ${e.pl} Hz)<br>`);
+        const m = L.marker([g.lat,g.lon]).bindPopup(popup).addTo(markersLayer);
+        // marker click highlights all matching rows
         m.on("click",()=>{
-          document.querySelectorAll("#resultTable tbody tr")
-            .forEach(tr=>tr.classList.remove("highlight"));
-          g.items.forEach(e=> repeaterList.forEach((r,i)=>{
-            if(r===e) tbody.children[i].classList.add("highlight");
-          }));
+          document.querySelectorAll("#resultTable tbody tr").forEach(rw=>rw.classList.remove("highlight"));
+          g.items.forEach(e=>{
+            document.querySelectorAll(`#resultTable tbody tr[data-lat='${e.lat}'][data-lon='${e.lon}']`)
+                    .forEach(rw=>rw.classList.add("highlight"));
+          });
         });
+        markerLookup[`${g.lat},${g.lon}`] = m;
       });
+
       map.fitBounds(markersLayer.getBounds().pad(0.4));
+      showStatus("");
     }
 
-    // geocode / reverse
     function geocode(q){
       showStatus("Geocoding…");
       fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=us&q=${encodeURIComponent(q)}`)
-        .then(r=>r.json()).then(d=> d.length ? render(+d[0].lat,+d[0].lon) : showStatus("Location not found."))
+        .then(r=>r.json())
+        .then(d=>d.length?render(+d[0].lat,+d[0].lon):showStatus("Location not found."))
         .catch(e=>showStatus("Error: "+e));
     }
-    document.getElementById("findButton").addEventListener("click",()=>{
+
+    findBtn.addEventListener("click",()=>{
       const q=inputField.value.trim();
       if(!q) return showStatus("Please enter something.");
       if(/^[A-R]{2}\d{2}[A-X]{2}$/i.test(q)){
         const p=mh2ll(q); render(p.lat,p.lon);
       } else geocode(q);
     });
-    inputField.addEventListener("keydown",e=>{
-      if(e.key==="Enter"){ e.preventDefault(); document.getElementById("findButton").click(); }
-    });
-    document.getElementById("geolocateBtn").addEventListener("click",()=>{
+    inputField.addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); findBtn.click(); } });
+    geoBtn.addEventListener("click",()=>{
       if(!navigator.geolocation) return showStatus("Geolocation not supported");
       showStatus("Locating…");
       navigator.geolocation.getCurrentPosition(pos=>{
         const lat=pos.coords.latitude, lon=pos.coords.longitude;
         fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`)
-          .then(r=>r.json()).then(d=>{
-            const a=d.address||{};
-            inputField.value=`${a.city||a.town||a.village||""}${a.state?`, ${a.state}`:""}`;
-            render(lat,lon);
-          })
+          .then(r=>r.json())
+          .then(d=>{ const a=d.address||{}; inputField.value=`${a.city||a.town||a.village||""}${a.state?`, ${a.state}`:""}`; render(lat,lon); })
           .catch(()=>render(lat,lon));
-      },()=>showStatus("Unable to retrieve location"));
+      },()=>showStatus("Unable to retrieve location"),{enableHighAccuracy:true});
     });
 
     initMap();
