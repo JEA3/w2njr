@@ -105,7 +105,8 @@
     const S9_VHF_DBM     = -93;
     const S_STEP         = 6;
     const SYSTEM_LOSS_DB = 3;
-    const FADE_PER_KM    = 0.3;
+    const FADE_PER_KM_VHF = 0.3;   // VHF fade margin (dB/km)
+    const FADE_PER_KM_UHF = 0.5;   // UHF fade margin (dB/km)
 
     const canvas = document.createElement("canvas"), ctx = canvas.getContext("2d");
 
@@ -203,7 +204,7 @@
             L_s  = L_u - 2*Math.pow(Math.log10(fMHz/28),2) - 5.4,
             pt   = 10*Math.log10(rpt.power*1000),
             gtd  = 10*Math.log10(rpt.gain) + RX_ANTENNA_DBI,
-            fade = FADE_PER_KM * d;
+            fade = (fMHz < 400 ? FADE_PER_KM_VHF : FADE_PER_KM_UHF) * d;
 
       // diffraction
       const diff = await computeDiffractionLoss(
