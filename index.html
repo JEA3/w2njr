@@ -105,7 +105,7 @@
     const S9_VHF_DBM     = -93;
     const S_STEP         = 6;
     const SYSTEM_LOSS_DB = 3;
-    const FADE_PER_KM    = 0.275;
+    const FADE_PER_KM    = 0.3;
 
     const canvas = document.createElement("canvas"), ctx = canvas.getContext("2d");
 
@@ -227,7 +227,7 @@
     // ─── REPEATERS ──────────────────────────────────────────────────────────
     const repeaterList = [
       { location:"Manahawkin, NJ",   lat:39.693472, lon:-74.250229, frequency:"445.075", offset:"-5",   pl:"141.3", callSign:"W2NJR", amsl:"492", power:50,  linkStatus:"Linked" },
-      { location:"Brick Twp, NJ",    lat:40.060272, lon:-74.139343, frequency:"146.490", offset:"+1",   pl:"141.3", callSign:"W2NJR", amsl:"115", power:50,  linkStatus:"Linked" },
+      { location:"Brick Twp, NJ",    lat:40.060272, lon:-74.139343, frequency:"146.490", offset:"+1",   pl:"141.3", callSign:"W2NJR", amsl:"115", power:100,  linkStatus:"Linked" },
       { location:"Brick Twp, NJ",    lat:40.060272, lon:-74.139343, frequency:"448.125", offset:"-5",   pl:"141.3", callSign:"W2NJR", amsl:"125", power:50,  linkStatus:"Linked" },
       { location:"Toms River, NJ",   lat:39.953400, lon:-74.197400, frequency:"449.625", offset:"-5",   pl:"141.3", callSign:"W2NJR", amsl:"180", power:80,  linkStatus:"Linked" },
       { location:"Tinton Falls, NJ", lat:40.242600, lon:-74.080500, frequency:"449.525", offset:"-5",   pl:"141.3", callSign:"W2NJR", amsl:"500", power:50,  linkStatus:"Linked" },
