@@ -29,10 +29,10 @@
     }
     button:hover { opacity:0.9; }
     #status, #elevation { margin-top:0.5rem; color:#333; }
-    table { width:100%; border-collapse:collapse; margin-top:1rem; background:#fff; }
-    th, td { padding:0.5rem; border:1px solid var(--border-gray); text-align:left; }
-    th { background:var(--brand-blue); color:var(--button-text); }
     .hidden { display:none; }
+    table { width:100%; border-collapse:collapse; margin-top:1rem; background:#fff; }
+    th, td { padding:0.5rem; border:1px solid var(--border-gray); text-align:left; user-select:none; }
+    th { background:var(--brand-blue); color:var(--button-text); cursor:pointer; }
     .highlight { background:var(--highlight-bg); }
     #mapWrapper { position:relative; margin-top:1rem; height:400px; }
     #fullscreenBtn {
@@ -51,40 +51,38 @@
     #mapWrapper:-ms-fullscreen #map,
     #mapWrapper:fullscreen #map { width:100%; height:100%; }
     #controls { margin-top:0.5rem; }
-    #controls label { margin-left:1rem; font-size:0.9rem; }
   </style>
 </head>
 <body>
   <h1>W2NJR Analog Repeater Guide</h1>
   <p>
     Official W2NJR Repeater System Site:
-    <a href="https://w2njr.net/" target="_blank" rel="noopener">w2njr.net</a>
+    <a href="https://w2njr.net/" target="_blank" rel="noopener">https://w2njr.net/</a>  Please consider supporting the system!   
   </p>
   <p>
-    Enter your location (address, town/state, ZIP, or 6-char Maidenhead) or Use My Location:
+    Enter your location (address, town/state, ZIP, or 6-char Maidenhead) or Use My Location:<br>
+    Click on a column header if you wish to change the sort order.
   </p>
   <div id="controls">
     <input id="locationInput" type="text" placeholder="Click here and start typing…" />
     <button id="findButton">Search</button>
     <button id="geolocateBtn">Use My Location</button>
-    <label><input type="checkbox" id="beamToggle" /> Show Beam Heading</label>
-    <label><input type="checkbox" id="pseudoToggle" /> Show Rx Power (dBm)</label>
   </div>
   <div id="status"></div>
   <div id="elevation"></div>
 
-  <table id="resultTable">
+  <table id="resultTable" class="hidden">
     <thead>
       <tr>
         <th>Location</th>
         <th>Distance</th>
-        <th class="pseudo-col hidden">Rx Power (dBm)</th>
-        <th class="pseudo-col hidden">S-Units</th>
+        <th>Rx Power (dBm)</th>
+        <th>S-Units</th>
         <th>Frequency</th>
         <th>Offset</th>
         <th>PL</th>
         <th>Link Status</th>
-        <th class="beam-col hidden">Beam Heading</th>
+        <th>Beam Heading</th>
       </tr>
     </thead>
     <tbody></tbody>
@@ -101,12 +99,14 @@
     const DEM_URL        = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium";
     const TERRAIN_ZOOM   = 9;
     const RX_ANTENNA_DBI = 2.1;
-    const MOUNT_HEIGHT   = 3;
+    const MOUNT_HEIGHT   = 2;
     const S9_VHF_DBM     = -93;
     const S_STEP         = 6;
     const SYSTEM_LOSS_DB = 3;
-    const FADE_PER_KM_VHF = 0.3;   // VHF fade margin (dB/km)
-    const FADE_PER_KM_UHF = 0.5;   // UHF fade margin (dB/km)
+    const FADE_PER_KM_VHF = 0.3;  // VHF fade (dB/km)
+    const FADE_PER_KM_UHF = 0.5;  // UHF fade (dB/km)
+
+    let sortCol = 2, sortDir = -1; // default sort by Rx Power desc
 
     const canvas = document.createElement("canvas"), ctx = canvas.getContext("2d");
 
@@ -118,18 +118,17 @@
     }
     function toRad(d){ return d * Math.PI/180; }
     function hav(lat1,lon1,lat2,lon2){
-      const dLat = toRad(lat2-lat1), dLon = toRad(lon2-lon1);
-      const a = Math.sin(dLat/2)**2 +
-                Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
-                Math.sin(dLon/2)**2;
-      return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      const dLat=toRad(lat2-lat1), dLon=toRad(lon2-lon1);
+      const a=Math.sin(dLat/2)**2 +
+              Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
+      return 6371*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
     }
     function bear(lat1,lon1,lat2,lon2){
-      const φ1 = toRad(lat1), φ2 = toRad(lat2), Δλ = toRad(lon2-lon1);
-      const y = Math.sin(Δλ)*Math.cos(φ2),
-            x = Math.cos(φ1)*Math.sin(φ2) -
-                Math.sin(φ1)*Math.cos(φ2)*Math.cos(Δλ);
-      return ((Math.atan2(y,x)*180/Math.PI + 360) % 360).toFixed(0);
+      const φ1=toRad(lat1), φ2=toRad(lat2), Δλ=toRad(lon2-lon1);
+      const y=Math.sin(Δλ)*Math.cos(φ2),
+            x=Math.cos(φ1)*Math.sin(φ2)-
+              Math.sin(φ1)*Math.cos(φ2)*Math.cos(Δλ);
+      return ((Math.atan2(y,x)*180/Math.PI+360)%360).toFixed(0);
     }
     function mh2ll(g){
       const G=g.toUpperCase(),
@@ -137,16 +136,16 @@
             C=+G[2], D=+G[3],
             E=G.charCodeAt(4)-65, F=G.charCodeAt(5)-65;
       return {
-        lon: A*20 - 180 + C*2 + E*(5/60) + 5/120,
-        lat: B*10 -  90 + D*1 + F*(2.5/60) + 2.5/120
+        lon: A*20-180 + C*2 + E*(5/60) + 5/120,
+        lat: B*10-90  + D*1 + F*(2.5/60) + 2.5/120
       };
     }
 
-    // ─── TERRARIUM ELEVATION ────────────────────────────────────────────────
+    // ─── TERRARIUM ELEVATION ───────────────────────────────────────────────
     async function getElevation(lat,lon){
       const z=TERRAIN_ZOOM,
-            x=Math.floor((lon+180)/360 * 2**z),
-            y=Math.floor((1 - Math.log(Math.tan(lat*Math.PI/180)+1/Math.cos(lat*Math.PI/180))/Math.PI)/2 * 2**z),
+            x=Math.floor((lon+180)/360*2**z),
+            y=Math.floor((1 - Math.log(Math.tan(lat*Math.PI/180)+1/Math.cos(lat*Math.PI/180))/Math.PI)/2*2**z),
             url=`${DEM_URL}/${z}/${x}/${y}.png`;
       try {
         const img = await fetch(url).then(r=>r.blob()).then(b=>createImageBitmap(b));
@@ -157,35 +156,26 @@
               px=Math.floor((lon-lonL)/dLon*img.width),
               py=Math.floor((latT-lat)/dLat*img.height),
               d=ctx.getImageData(px,py,1,1).data;
-        let elev = (d[0]*256 + d[1] + d[2]/256) - 32768;
+        let elev=(d[0]*256 + d[1] + d[2]/256)-32768;
         return Math.max(0,elev);
-      } catch {
-        return 0;
-      }
+      } catch { return 0; }
     }
 
     // ─── FRESNEL & BULLINGTON DIFFRACTION ─────────────────────────────────
-    function fresnelRadius(d1_m, d2_m, freqMHz){
-      const λ = 3e8 / (freqMHz*1e6);
-      return Math.sqrt(λ * d1_m * d2_m / (d1_m + d2_m));
-    }
-
-    async function computeDiffractionLoss(lat1,lon1,arsl1, lat2,lon2,arsl2, freqMHz){
-      const samples = 50;
-      const totalKm = hav(lat1,lon1,lat2,lon2);
-      let maxV = -Infinity;
-      for(let i=1; i<samples; i++){
-        const f = i/samples;
-        const lat = lat1 + (lat2-lat1)*f;
-        const lon = lon1 + (lon2-lon1)*f;
-        const terrain = await getElevation(lat,lon);
-        const lineH = arsl1*(1-f) + arsl2*f;
-        const d1 = totalKm*f*1000, d2 = totalKm*(1-f)*1000;
-        const R = fresnelRadius(d1,d2,freqMHz);
-        const v = (terrain - lineH)/R;
-        maxV = Math.max(maxV, v);
+    function fresnelRadius(d1,d2,fMHz){ const λ=3e8/(fMHz*1e6); return Math.sqrt(λ*d1*d2/(d1+d2)); }
+    async function computeDiffractionLoss(lat1,lon1,arsl1, lat2,lon2,arsl2,fMHz){
+      const samples=50, totalKm=hav(lat1,lon1,lat2,lon2);
+      let maxV=-Infinity;
+      for(let i=1;i<samples;i++){
+        const f=i/samples;
+        const lat=lat1+(lat2-lat1)*f, lon=lon1+(lon2-lon1)*f;
+        const terrain=await getElevation(lat,lon);
+        const lineH=arsl1*(1-f)+arsl2*f;
+        const d1=totalKm*f*1e3, d2=totalKm*(1-f)*1e3;
+        const R=fresnelRadius(d1,d2,fMHz);
+        maxV=Math.max(maxV,(terrain-lineH)/R);
       }
-      if(maxV < -0.78) return 0;            // negligible diffraction
+      if(maxV < -0.78) return 0;
       // single-edge (Bullington-like) knife-edge loss:
       return Math.pow(
         6.9 + 20 * Math.log10(Math.sqrt((maxV - 0.1) ** 2 + 1) + maxV - 0.1),
@@ -193,43 +183,31 @@
       );
     }
 
-    // ─── LINK BUDGET ────────────────────────────────────────────────────────
-    async function calculatePseudoSNR(distKm, rpt, userAmsl){
-      const fMHz = parseFloat(rpt.frequency),
-            hb   = parseFloat(rpt.amsl),
-            d    = distKm;
-
-      // Hata/COST-231 suburban
-      const hb_m = hb*0.3048,
-            a_hm = (1.1*Math.log10(fMHz)-0.7)*MOUNT_HEIGHT - (1.56*Math.log10(fMHz)-0.8),
-            L_u  = 69.55 + 26.16*Math.log10(fMHz) - 13.82*Math.log10(hb_m) - a_hm
-                 + (44.9 - 6.55*Math.log10(hb_m))*Math.log10(d),
-            L_s  = L_u - 2*Math.pow(Math.log10(fMHz/28),2) - 5.4,
-            pt   = 10*Math.log10(rpt.power*1000),
-            gtd  = 10*Math.log10(rpt.gain) + RX_ANTENNA_DBI,
-            fade = (fMHz < 400 ? FADE_PER_KM_VHF : FADE_PER_KM_UHF) * d;
-
-      // diffraction
-      const diff = await computeDiffractionLoss(
-        userAmsl.lat, userAmsl.lon, userAmsl.amsl,
-        rpt.lat, rpt.lon, rpt.amsl,
-        fMHz
-      );
-
-      return pt + gtd - L_s - SYSTEM_LOSS_DB - fade - diff;
+    // ─── LINK BUDGET ───────────────────────────────────────────────────────
+    async function calculatePseudoSNR(distKm,rpt,user){
+      const fMHz=parseFloat(rpt.frequency), hb=parseFloat(rpt.amsl), d=distKm;
+      const hb_m=hb*0.3048,
+            a_hm=(1.1*Math.log10(fMHz)-0.7)*MOUNT_HEIGHT-(1.56*Math.log10(fMHz)-0.8),
+            L_u=69.55+26.16*Math.log10(fMHz)-13.82*Math.log10(hb_m)-a_hm
+               +(44.9-6.55*Math.log10(hb_m))*Math.log10(d),
+            L_s=L_u-2*Math.pow(Math.log10(fMHz/28),2)-5.4,
+            pt=10*Math.log10(rpt.power*1000),
+            gtd=10*Math.log10(rpt.gain)+RX_ANTENNA_DBI,
+            fade=(fMHz<400?FADE_PER_KM_VHF:FADE_PER_KM_UHF)*d;
+      const diff=await computeDiffractionLoss(user.lat,user.lon,user.amsl,rpt.lat,rpt.lon,parseFloat(rpt.amsl),fMHz);
+      return pt+gtd-L_s-SYSTEM_LOSS_DB-fade-diff;
     }
-
     function prx2Sunits(dbm){
       if(dbm>=S9_VHF_DBM){
         const extra=Math.round((dbm-S9_VHF_DBM)/5)*5;
-        return extra>0?`S9+${extra}dB`:`S9`;
+        return extra>0?`S9+${extra}dB`:"S9";
       }
       const s=9+Math.floor((dbm-S9_VHF_DBM)/S_STEP);
-      return s>0?`S${s}`:`S0`;
+      return s>0?`S${s}`:"S0";
     }
 
-    // ─── REPEATERS ──────────────────────────────────────────────────────────
-    const repeaterList = [
+    // ─── REPEATERS ─────────────────────────────────────────────────────────
+    const repeaterList=[
       { location:"Manahawkin, NJ",   lat:39.693472, lon:-74.250229, frequency:"445.075", offset:"-5",   pl:"141.3", callSign:"W2NJR", amsl:"492", power:50,  linkStatus:"Linked" },
       { location:"Brick Twp, NJ",    lat:40.060272, lon:-74.139343, frequency:"146.490", offset:"+1",   pl:"141.3", callSign:"W2NJR", amsl:"115", power:100,  linkStatus:"Linked" },
       { location:"Brick Twp, NJ",    lat:40.060272, lon:-74.139343, frequency:"448.125", offset:"-5",   pl:"141.3", callSign:"W2NJR", amsl:"125", power:50,  linkStatus:"Linked" },
@@ -247,136 +225,154 @@
       { location:"Alpine, NJ",       lat:40.960681, lon:-73.922704, frequency:"146.955", offset:"-0.6", pl:"141.3", callSign:"K2ETN", amsl:"945", power:50,  linkStatus:"Linked for UCTN" }
     ];
     repeaterList.forEach(r=>{
-      const f = parseFloat(r.frequency);
-      r.gain = f < 400 ? Math.pow(10,5/10) : Math.pow(10,7/10);
+      const f=parseFloat(r.frequency);
+      r.gain = f<400?Math.pow(10,5/10):Math.pow(10,7/10);
     });
 
-    // ─── MAP & UI ──────────────────────────────────────────────────────────
-    let map, markersLayer, markerLookup = {}, lastUserCoords = null;
-    const statusEl     = document.getElementById("status"),
-          elevationEl  = document.getElementById("elevation"),
-          tbody        = document.querySelector("#resultTable tbody"),
-          inputField   = document.getElementById("locationInput"),
-          findBtn      = document.getElementById("findButton"),
-          geoBtn       = document.getElementById("geolocateBtn"),
-          beamToggle   = document.getElementById("beamToggle"),
-          pseudoToggle = document.getElementById("pseudoToggle"),
-          fsBtn        = document.getElementById("fullscreenBtn"),
-          mapWrapper   = document.getElementById("mapWrapper");
+    // ─── MAP & UI SETUP ─────────────────────────────────────────────────────
+    let map, markersLayer, markerLookup={}, lastUserCoords=null;
+    const statusEl    = document.getElementById("status"),
+          elevationEl = document.getElementById("elevation"),
+          tbody       = document.querySelector("#resultTable tbody"),
+          inputField  = document.getElementById("locationInput"),
+          findBtn     = document.getElementById("findButton"),
+          geoBtn      = document.getElementById("geolocateBtn"),
+          fsBtn       = document.getElementById("fullscreenBtn"),
+          mapWrapper  = document.getElementById("mapWrapper");
 
     function initMap(){
       map = L.map("map").setView([39.95,-74.2],10);
-      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-                  { attribution:"© OpenStreetMap contributors" }).addTo(map);
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution:"© OpenStreetMap contributors"
+      }).addTo(map);
       markersLayer = L.featureGroup().addTo(map);
+
+      // sortable headers
+      document.querySelectorAll("#resultTable th").forEach((th,i)=>{
+        th.addEventListener("click", ()=>{
+          if(sortCol===i) sortDir=-sortDir;
+          else { sortCol=i; sortDir=-1; }
+          render(lastUserCoords.lat,lastUserCoords.lon);
+        });
+      });
+
       map.on("click", ()=>{
         document.querySelectorAll("#resultTable tbody tr")
                 .forEach(tr=>tr.classList.remove("highlight"));
       });
     }
 
-    inputField.addEventListener("focus", ()=>{ inputField.value = ""; });
-    function showStatus(msg){ statusEl.innerText = msg; }
-    beamToggle.addEventListener("change", ()=>{ if(lastUserCoords) render(lastUserCoords.lat, lastUserCoords.lon); });
-    pseudoToggle.addEventListener("change", ()=>{ if(lastUserCoords) render(lastUserCoords.lat, lastUserCoords.lon); });
-    fsBtn.addEventListener("click", ()=>{ document.fullscreenElement ? document.exitFullscreen() : mapWrapper.requestFullscreen(); });
+    inputField.addEventListener("focus", ()=>{ inputField.value=""; });
+    function showStatus(msg){ statusEl.innerText=msg;  }
+
+    fsBtn.addEventListener("click", ()=>{
+      document.fullscreenElement
+        ? document.exitFullscreen()
+        : mapWrapper.requestFullscreen();
+    });
 
     async function render(lat,lon){
-      lastUserCoords = {lat,lon};
-      const baseElev = await getElevation(lat,lon),
-            userAmsl = baseElev + MOUNT_HEIGHT;
-      elevationEl.innerText = `Ground Elevation: ${baseElev.toFixed(1)} m ASL; Antenna at ${userAmsl.toFixed(1)} m`;
+      lastUserCoords={lat,lon};
 
-      if(mapWrapper.classList.contains("hidden")){
-        mapWrapper.classList.remove("hidden");
-        map.invalidateSize();
-      }
+      // elevation
+      const baseElev=await getElevation(lat,lon),
+            userAmsl=baseElev+MOUNT_HEIGHT;
+      elevationEl.innerText=
+        `Ground Elevation: ${baseElev.toFixed(1)} m ASL; Antenna at ${userAmsl.toFixed(1)} m`;
 
+      // un-hide
+      document.getElementById("resultTable").classList.remove("hidden");
+      mapWrapper.classList.remove("hidden");
+      map.invalidateSize();
+
+      // compute distances/bearings
       repeaterList.forEach(r=>{
-        r.distance = hav(lat,lon,r.lat,r.lon);
-        r.bearing  = bear(lat,lon,r.lat,r.lon);
+        r.distance=hav(lat,lon,r.lat,r.lon);
+        r.bearing=bear(lat,lon,r.lat,r.lon);
       });
 
-      if(pseudoToggle.checked){
-        showStatus("Calculating Rx power…");
-        await Promise.all(repeaterList.map(async r=>{
-          r.prxDbm = await calculatePseudoSNR(r.distance, r, {lat,lon,amsl:userAmsl});
-          r.sUnits = prx2Sunits(r.prxDbm);
-        }));
-        showStatus("");
-      } else {
-        repeaterList.forEach(r=>{ r.prxDbm = null; r.sUnits = null; });
-      }
+      showStatus("");  // clear status
 
-      repeaterList.sort((a,b)=>
-        pseudoToggle.checked
-          ? (b.prxDbm||-Infinity) - (a.prxDbm||-Infinity)
-          : a.distance - b.distance
-      );
+      // compute pseudo-SNR
+      await Promise.all(repeaterList.map(async r=>{
+        r.prxDbm = await calculatePseudoSNR(r.distance,r,{lat,lon,amsl:userAmsl});
+        r.sUnits = prx2Sunits(r.prxDbm);
+      }));
 
-      tbody.innerHTML = "";
+      // sort
+      repeaterList.sort((a,b)=>{
+        const getVal=(x,i)=>{
+          switch(i){
+            case 0: return x.location;
+            case 1: return x.distance;
+            case 2: return x.prxDbm;
+            case 3: return x.sUnits;
+            case 4: return parseFloat(x.frequency);
+            case 5: return parseFloat(x.offset);
+            case 6: return parseFloat(x.pl);
+            case 7: return x.linkStatus;
+            case 8: return parseInt(x.bearing,10);
+          }
+        };
+        const va=getVal(a,sortCol), vb=getVal(b,sortCol);
+        if(typeof va==="number"&&typeof vb==="number") return (va-vb)*sortDir;
+        return String(va).localeCompare(String(vb))*sortDir;
+      });
+
+      // build table
+      tbody.innerHTML="";
       repeaterList.forEach(r=>{
-        const tr = document.createElement("tr");
-        tr.dataset.lat = r.lat;
-        tr.dataset.lon = r.lon;
-        const mi = (r.distance*0.621371).toFixed(2) + " mi";
-        [ r.location, mi,
-          r.prxDbm!=null? r.prxDbm.toFixed(1) : "-",
-          r.sUnits||"-",
+        const tr=document.createElement("tr");
+        tr.dataset.lat=r.lat; tr.dataset.lon=r.lon;
+        const vals=[
+          r.location,
+          (r.distance*0.621371).toFixed(2)+" mi",
+          r.prxDbm.toFixed(1),
+          r.sUnits,
           r.frequency+" MHz",
           r.offset+" MHz",
           r.pl+" Hz",
           r.linkStatus,
           r.bearing+"°"
-        ].forEach((txt,i)=>{
-          const td = document.createElement("td");
-          td.innerText = txt;
-          if(i===2||i===3) td.classList.add("pseudo-col");
-          if(i===8)        td.classList.add("beam-col");
-          tr.appendChild(td);
+        ];
+        vals.forEach(txt=>{
+          const td=document.createElement("td"); td.innerText=txt; tr.appendChild(td);
         });
         tr.addEventListener("click", ()=>{
           document.querySelectorAll("#resultTable tbody tr")
-                  .forEach(rw=>rw.classList.remove("highlight"));
+            .forEach(row=>row.classList.remove("highlight"));
           tr.classList.add("highlight");
-          const key = `${r.lat},${r.lon}`, mk = markerLookup[key];
-          if(mk){ mk.openPopup(); map.setView([r.lat,r.lon], map.getZoom()); }
+          const mk=markerLookup[`${r.lat},${r.lon}`];
+          if(mk){ mk.openPopup(); map.setView([r.lat,r.lon],map.getZoom()); }
         });
         tbody.appendChild(tr);
       });
 
-      document.querySelectorAll(".pseudo-col").forEach(el=>el.classList.toggle("hidden",!pseudoToggle.checked));
-      document.querySelectorAll(".beam-col").forEach(el=>el.classList.toggle("hidden",!beamToggle.checked));
-
+      // map markers
       markersLayer.clearLayers();
-      markerLookup = {};
-
       L.circleMarker([lat,lon],{radius:8,color:"red",fillColor:"#f03",fillOpacity:0.7})
         .bindPopup("Your Location").addTo(markersLayer);
 
-      const groups = {};
+      const groups={};
       repeaterList.forEach(r=>{
-        const k = `${r.lat},${r.lon}`;
-        if(!groups[k]) groups[k] = {lat:r.lat, lon:r.lon, items:[]};
+        const k=`${r.lat},${r.lon}`;
+        if(!groups[k]) groups[k]={lat:r.lat,lon:r.lon,items:[]};
         groups[k].items.push(r);
       });
-
       Object.values(groups).forEach(g=>{
-        let popup = `<strong>${g.items[0].location}</strong><br>`;
-        g.items.forEach(e=>{
-          popup += `${e.frequency} MHz (${e.offset} MHz, PL ${e.pl} Hz)<br>`;
-        });
-        const m = L.marker([g.lat,g.lon]).bindPopup(popup).addTo(markersLayer);
-        m.on("click", ()=>{
+        let popup=`<strong>${g.items[0].location}</strong><br>`;
+        g.items.forEach(e=> popup+=`${e.frequency} MHz (${e.offset} MHz, PL ${e.pl} Hz)<br>`);
+        const m=L.marker([g.lat,g.lon]).bindPopup(popup).addTo(markersLayer);
+        m.on("click",()=>{
           document.querySelectorAll("#resultTable tbody tr")
-                  .forEach(rw=>rw.classList.remove("highlight"));
+            .forEach(row=>row.classList.remove("highlight"));
           g.items.forEach(e=>{
             document.querySelectorAll(
               `#resultTable tbody tr[data-lat='${e.lat}'][data-lon='${e.lon}']`
-            ).forEach(rw=>rw.classList.add("highlight"));
+            ).forEach(row=>row.classList.add("highlight"));
           });
         });
-        markerLookup[`${g.lat},${g.lon}`] = m;
+        markerLookup[`${g.lat},${g.lon}`]=m;
       });
 
       map.fitBounds(markersLayer.getBounds().pad(0.4));
@@ -386,11 +382,11 @@
       showStatus("Geocoding…");
       fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=us&q=${encodeURIComponent(q)}`)
         .then(r=>r.json())
-        .then(d=>d.length?render(+d[0].lat,+d[0].lon):showStatus("Location not found."))
+        .then(d=> d.length ? render(+d[0].lat,+d[0].lon) : showStatus("Location not found."))
         .catch(e=>showStatus("Error: "+e));
     }
 
-    findBtn.addEventListener("click", ()=>{
+    document.getElementById("findButton").addEventListener("click", ()=>{
       const q = inputField.value.trim();
       if(!q) return showStatus("Please enter something.");
       if(/^[A-R]{2}\d{2}[A-X]{2}$/i.test(q)){
@@ -402,19 +398,18 @@
     });
 
     inputField.addEventListener("keydown", e=>{
-      if(e.key==="Enter"){ e.preventDefault(); findBtn.click(); }
+      if(e.key==="Enter"){ e.preventDefault(); document.getElementById("findButton").click(); }
     });
 
-    geoBtn.addEventListener("click", ()=>{
+    document.getElementById("geolocateBtn").addEventListener("click", ()=>{
       if(!navigator.geolocation) return showStatus("Geolocation not supported");
       showStatus("Locating…");
       navigator.geolocation.getCurrentPosition(pos=>{
         const lat=pos.coords.latitude, lon=pos.coords.longitude;
         fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`)
-          .then(r=>r.json())
-          .then(d=>{
-            const a = d.address||{};
-            inputField.value = `${a.city||a.town||a.village||''}${a.state?`, ${a.state}`:''}`;
+          .then(r=>r.json()).then(d=>{
+            const a=d.address||{};
+            inputField.value = `${a.city||a.town||a.village||""}${a.state?`, ${a.state}`:""}`;
             render(lat,lon);
           })
           .catch(()=>render(lat,lon));
