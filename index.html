@@ -106,10 +106,10 @@
     const S9_VHF_DBM         = -93;
     const S_STEP             = 6;
     const SYSTEM_LOSS_DB     = 3;
-    const FADE_EXP_SCALE_VHF = 10;
-    const FADE_EXP_FACTOR_VHF= 0.6;
-    const FADE_EXP_SCALE_UHF = 20;
-    const FADE_EXP_FACTOR_UHF= 0.3;
+    const FADE_EXP_SCALE_VHF = 8;
+    const FADE_EXP_FACTOR_VHF= 0.75;
+    const FADE_EXP_SCALE_UHF = 16;
+    const FADE_EXP_FACTOR_UHF= 0.375;
 
     // Default sort by S-Units (column 3), descending
     let sortCol = 3, sortDir = -1;
@@ -180,7 +180,7 @@
       return Math.sqrt(λ*d1*d2/(d1+d2));
     }
     async function computeDiffractionLoss(lat1,lon1,h1m, lat2,lon2,h2m,fMHz){
-      const samples=50, totalKm=hav(lat1,lon1,lat2,lon2);
+      const samples=100, totalKm=hav(lat1,lon1,lat2,lon2);
       if (totalKm < 0.001) return 0;
       let maxV=-Infinity;
       for(let i=1;i<samples;i++){
@@ -197,7 +197,7 @@
       if (maxV < -0.78) return 0;
       const adjV = maxV * 1.2,
             base = 6.9 + 20*Math.log10(Math.sqrt((adjV-0.1)**2+1) + adjV - 0.1);
-      return Math.pow(base,1.4);
+      return Math.pow(base,1.5);
     }
 
     // ─── PSEUDO-SNR LINK BUDGET ──────────────────────────────
@@ -234,7 +234,7 @@
         rpt.lat, rpt.lon, rpt.amsl * 0.3048,
         fMHz
       );
-      const cappedDiff = Math.min(diff, 15);
+      const cappedDiff = Math.min(diff, 20);
 
       // Urban clutter penalty
       let clutterPenalty = 0;
