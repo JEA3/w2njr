@@ -197,7 +197,7 @@
       if (maxV < -0.78) return 0;
       const adjV = maxV * 1.2,
             base = 6.9 + 20*Math.log10(Math.sqrt((adjV-0.1)**2+1) + adjV - 0.1);
-      return Math.pow(base,1.5);
+      return Math.pow(base,1.45);
     }
 
     // ─── PSEUDO-SNR LINK BUDGET ──────────────────────────────
