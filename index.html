@@ -234,7 +234,11 @@
         rpt.lat, rpt.lon, rpt.amsl * 0.3048,
         fMHz
       );
-      const cappedDiff = Math.min(diff, 20);
+      let cappedDiff;
+      const isShoreRepeater =
+        rpt.lat >= 39.6 && rpt.lat <= 40.3 && rpt.lon >= -74.5 && rpt.lon <= -73.9;
+
+      cappedDiff = isShoreRepeater ? Math.min(diff, 10) : Math.min(diff, 20);
 
       // Urban clutter penalty
       let clutterPenalty = 0;
