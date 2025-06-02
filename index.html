@@ -106,13 +106,19 @@
     const S9_VHF_DBM         = -93;
     const S_STEP             = 6;
     const SYSTEM_LOSS_DB     = 3;
-    const FADE_EXP_SCALE_VHF = 18;
-    const FADE_EXP_FACTOR_VHF= 0.36;
-    const FADE_EXP_SCALE_UHF = 34;
-    const FADE_EXP_FACTOR_UHF= 0.21;
+    const FADE_EXP_SCALE_VHF = 14;
+    const FADE_EXP_FACTOR_VHF= 0.6;
 
-    // Default sort by S-Units (column 3), descending
-    let sortCol = 3, sortDir = -1;
+    // UHF fade parameters for NJ terrain
+    const FADE_HILL_THRESHOLD_M     = 50;
+    const FADE_EXP_SCALE_UHF_FLAT   = 10;
+    const FADE_EXP_FACTOR_UHF_FLAT  = 0.6;
+    const FADE_EXP_SCALE_UHF_HILL   = 8;
+    const FADE_EXP_FACTOR_UHF_HILL  = 0.8;
+    const FADE_CLAMP_UHF            = 25;
+
+    // Default sort by Rx Power (column 2), descending
+    let sortCol = 2, sortDir = -1;
 
     const canvas = document.createElement("canvas"),
           ctx    = canvas.getContext("2d");
@@ -213,7 +219,7 @@
 
       const L_s = L_u - 2 * Math.pow(Math.log10(fMHz / 28), 2) - 5.4;
 
-      const pt = 10 * Math.log10(rpt.power * 1000);  // watts to dBm
+      const pt = 10 * Math.log10(rpt.power * 1000);   // watts to dBm
       const gtd = 10 * Math.log10(rpt.gain) + RX_ANTENNA_DBI;
 
       const elevDelta = rpt.amsl * 0.3048 - user.amsl;
@@ -223,10 +229,19 @@
       const uphill = boost * (1 + Math.min(Math.max(0, elevDelta), 50) / ((d + 15) * 28));
 
       // Adjusted fade curve
-      let fade = fMHz < 400
-        ? uphill * FADE_EXP_FACTOR_VHF * (Math.exp(Math.max(0, d - 2) / (FADE_EXP_SCALE_VHF * 1.5)) - 1)
-        : uphill * FADE_EXP_FACTOR_UHF * (Math.exp(Math.max(0, d - 2) / (FADE_EXP_SCALE_UHF * 1.5)) - 1);
-      fade = Math.min(fade, 18);  // cap total fade penalty
+      let fade;
+      if (fMHz < 400) {
+        fade = uphill * FADE_EXP_FACTOR_VHF * (Math.exp(Math.max(0, d - 2) / (FADE_EXP_SCALE_VHF * 1.5)) - 1);
+        fade = Math.min(fade, FADE_CLAMP_UHF);
+      } else {
+        const repeaterElevM = rpt.amsl * 0.3048;
+        const elevDiff      = Math.abs(repeaterElevM - user.amsl);
+        const isHilly       = elevDiff > FADE_HILL_THRESHOLD_M;
+        const scaleUHF      = isHilly ? FADE_EXP_SCALE_UHF_HILL : FADE_EXP_SCALE_UHF_FLAT;
+        const factorUHF     = isHilly ? FADE_EXP_FACTOR_UHF_HILL : FADE_EXP_FACTOR_UHF_FLAT;
+        fade = uphill * factorUHF * (Math.exp(Math.max(0, d - 2) / (scaleUHF * 1.5)) - 1);
+        fade = Math.min(fade, FADE_CLAMP_UHF);
+      }
 
       // Diffraction loss
       const diff = await computeDiffractionLoss(
@@ -252,24 +267,67 @@
       // Final SNR
       let snr = pt + gtd - L_s - SYSTEM_LOSS_DB - fade - cappedDiff - clutterPenalty;
 
-      // Limits
-      if (!isFinite(snr) || snr < -130) snr = -130;
-      if (distKm > 70) return -130;
+      // Band-specific floor
+      const isUHF = fMHz >= 400;
+      const floorDbm = isUHF ? -157 : -147;
+      if (!isFinite(snr) || snr < floorDbm) {
+        snr = floorDbm;
+      }
+      if (distKm > 70) return floorDbm;
 
       return snr;
     }
 
     // ─── S-Unit Conversion ───────────────────────────────────
     function prx2Sunits(dbm, isUHF = false) {
-      const noiseFloor = isUHF ? -118 : -121;
-      const s9Ref = -93;
-      if (!isFinite(dbm)) return "S0";
-      if (dbm < noiseFloor) return "S0";
-      const sUnit = Math.floor((dbm - noiseFloor) / 6) + 1;
-      if (dbm < s9Ref) return `S${Math.min(sUnit, 9)}`;
-      let overS9 = Math.round((dbm - s9Ref) / 5) * 5;
-      overS9 = Math.min(overS9, 60);
-      return overS9 > 0 ? `S9+${overS9}dB` : "S9";
+      // 1) Non-numeric or infinite → “S0”
+      if (!isFinite(dbm)) {
+        return "S0";
+      }
+
+      // 2) Choose band-specific S9 reference (VHF or UHF)
+      const s9Ref = isUHF ? -103 : -93;
+
+      // 3) Define the “midpoint centers” of each S-unit (in dBm):
+      //    [S9, S8, S7, S6, S5, S4, S3, S2, S1]
+      const centers = [
+        s9Ref,           // S9
+        s9Ref - 6,       // S8
+        s9Ref - 12,      // S7
+        s9Ref - 18,      // S6
+        s9Ref - 24,      // S5
+        s9Ref - 30,      // S4
+        s9Ref - 36,      // S3
+        s9Ref - 42,      // S2
+        s9Ref - 48       // S1
+      ];
+      //    The “noise floor” for S0 is 3 dB below S1 center:
+      const noiseFloor = centers[8] - 3; // (s1Center - 3)
+
+      // 4) Anything at or below noiseFloor → “S0”
+      if (dbm <= noiseFloor) {
+        return "S0";
+      }
+
+      // 5) Handle signals stronger than the S9 center:
+      if (dbm >= centers[0] - 3) {
+        // If above (S9 center - 3 dB), start as S9 (within ±3 dB of center)
+        const rawOver = Math.round(dbm - centers[0]); 
+        return rawOver <= 0 
+          ? "S9" 
+          : `S9+${rawOver}dB`;
+      }
+
+      // 6) Otherwise, loop through S8 down to S1:
+      for (let i = 1; i < centers.length; i++) {
+        // Check if within ±3 dB of that center:
+        if (dbm >= centers[i] - 3) {
+          return "S" + (9 - i);
+        }
+      }
+
+      // 7) If somehow we haven’t returned by now, default to S0:
+      return "S0";
     }
 
     // ─── Helper to sort S-Units numerically ─────────────────
@@ -397,14 +455,14 @@
         r.sUnits = prx2Sunits(r.prxDbm, r.frequency > 300);
       }));
 
-      // sort (numeric for S-units)
+      // sort (numeric for dBm)
       repeaterList.sort((a,b)=>{
         const va = getVal(a,sortCol), vb = getVal(b,sortCol);
-        if (sortCol === 3) {
-          return (sUnitToValue(va) - sUnitToValue(vb)) * sortDir;
-        }
         if (typeof va === "number" && typeof vb === "number") {
           return (va - vb) * sortDir;
+        }
+        if (sortCol === 3) {
+          return (sUnitToValue(va) - sUnitToValue(vb)) * sortDir;
         }
         return String(va).localeCompare(String(vb)) * sortDir;
       });
